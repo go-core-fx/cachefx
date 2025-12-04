@@ -16,6 +16,8 @@ jobs:
 
       # step 2: remove specific labels
       - name: Remove specific labels
-        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label "ready,deployed"
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} --remove-label "ready" || true
+          gh pr edit ${{ github.event.pull_request.number }} --remove-label "deployed" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
