@@ -178,8 +178,7 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 //
 // The behavior depends on the key's existence and expiration state:
 //   - If the key exists and has not expired, returns the value and nil error
-//   - If the key does not exist, returns nil and ErrKeyNotFound
-//   - If the key exists but has expired, returns nil and ErrKeyExpired
+//   - If the key does not exist or has expired, returns nil and ErrKeyNotFound
 //
 // GetOptions can be used to modify the behavior, such as updating TTL,
 // deleting the key after retrieval, or setting a new expiration time.
@@ -191,8 +190,8 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 //
 // Returns:
 //   - []byte: The cached value if found and not expired
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+//     otherwise an error
 //
 // Example:
 //
@@ -266,8 +265,8 @@ func (m *MemoryCache) Get(_ context.Context, key string, opts ...GetOption) ([]b
 //
 // Returns:
 //   - []byte: The cached value if found and not expired
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+//     otherwise an error
 //
 // Example:
 //
@@ -369,7 +368,7 @@ func (m *MemoryCache) newItem(value []byte, opts ...Option) *memoryItem {
 // getItem retrieves a memory item using the provided getter function and checks for expiration.
 //
 // This is a helper method that wraps the getter function and adds expiration checking.
-// It returns ErrKeyNotFound if the item doesn't exist, or ErrKeyExpired if it exists but has expired.
+// It returns ErrKeyNotFound if the item doesn't exist or has expired.
 //
 // Parameters:
 //   - getter: A function that returns a memory item and a boolean indicating if it was found
@@ -377,7 +376,7 @@ func (m *MemoryCache) newItem(value []byte, opts ...Option) *memoryItem {
 // Returns:
 //   - *memoryItem: The memory item if found and not expired
 //   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired
+//     or has expired
 func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, error) {
 	item, ok := getter()
 
@@ -386,7 +385,7 @@ func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, e
 	}
 
 	if item.isExpired(time.Now()) {
-		return nil, ErrKeyExpired
+		return nil, ErrKeyNotFound
 	}
 
 	return item, nil
@@ -402,8 +401,7 @@ func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, e
 //
 // Returns:
 //   - []byte: The cached value if found and not expired
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired
 func (m *MemoryCache) getValue(getter func() (*memoryItem, bool)) ([]byte, error) {
 	item, err := m.getItem(getter)
 	if err != nil {

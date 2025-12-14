@@ -18,23 +18,6 @@ var (
 	//	}
 	ErrKeyNotFound = errors.New("key not found")
 
-	// ErrKeyExpired indicates a value exists but has expired.
-	//
-	// This error is returned by Get operations when the requested key exists in the
-	// cache but its time-to-live (TTL) has elapsed. Expired items may still exist
-	// in the cache until they are explicitly removed by a Cleanup operation or
-	// automatically by the cache implementation.
-	//
-	// Example:
-	//	// Set a value with 1 second TTL
-	//	cache.Set(ctx, "temp-key", []byte("data"), cache.WithTTL(time.Second))
-	//	time.Sleep(2 * time.Second)
-	//	_, err := cache.Get(ctx, "temp-key")
-	//	if errors.Is(err, cache.ErrKeyExpired) {
-	//	    // Handle expired key
-	//	}
-	ErrKeyExpired = errors.New("key expired")
-
 	// ErrKeyExists indicates a conflicting set when the key already exists.
 	//
 	// This error is returned by SetOrFail operations when attempting to set a value

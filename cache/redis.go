@@ -251,8 +251,7 @@ func (r *RedisCache) Drain(ctx context.Context) (map[string][]byte, error) {
 //
 // The behavior depends on the key's existence and expiration state:
 //   - If the key exists and has not expired, returns the value and nil error
-//   - If the key does not exist, returns nil and ErrKeyNotFound
-//   - If the key exists but has expired, returns nil and ErrKeyExpired
+//   - If the key does not exist or has expired, returns nil and ErrKeyNotFound
 //
 // GetOptions can be used to modify the behavior, such as updating TTL,
 // deleting the key after retrieval, or setting a new expiration time.
@@ -265,8 +264,8 @@ func (r *RedisCache) Drain(ctx context.Context) (map[string][]byte, error) {
 //
 // Returns:
 //   - []byte: The cached value if found and not expired
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+//     otherwise an error
 //
 // Example:
 //
@@ -343,7 +342,7 @@ func (r *RedisCache) Get(ctx context.Context, key string, opts ...GetOption) ([]
 // Returns:
 //   - []byte: The cached value if found and not expired
 //   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//     otherwise an error
 //
 // Example:
 //
