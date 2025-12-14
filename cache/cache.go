@@ -27,9 +27,7 @@
 //	value, err := cache.Get(ctx, "key")
 //	if err != nil {
 //	    if errors.Is(err, cache.ErrKeyNotFound) {
-//	        // Handle missing key
-//	    } else if errors.Is(err, cache.ErrKeyExpired) {
-//	        // Handle expired key
+//	        // Handle missing or expired key
 //	    } else {
 //	        log.Fatal(err)
 //	    }
@@ -164,8 +162,7 @@ type Cache interface {
 	//
 	// The behavior depends on the key's existence and expiration state:
 	//   - If the key exists and has not expired, returns the value and nil error
-	//   - If the key does not exist, returns nil and ErrKeyNotFound
-	//   - If the key exists but has expired, returns nil and ErrKeyExpired
+	//   - If the key does not exist or has expired, returns nil and ErrKeyNotFound
 	//
 	// GetOptions can be used to modify the behavior, such as updating TTL,
 	// deleting the key after retrieval, or setting a new expiration time.
@@ -177,8 +174,8 @@ type Cache interface {
 	//
 	// Returns:
 	//   - []byte: The cached value if found and not expired
-	//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-	//            ErrKeyExpired if key exists but has expired, otherwise an error
+	//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+	//            otherwise an error
 	//
 	// Example:
 	//	// Simple get
@@ -202,8 +199,8 @@ type Cache interface {
 	//
 	// Returns:
 	//   - []byte: The cached value if found and not expired
-	//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-	//            ErrKeyExpired if key exists but has expired, otherwise an error
+	//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+	//            otherwise an error
 	//
 	// Example:
 	//	// Atomically get and remove a value

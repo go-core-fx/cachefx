@@ -56,8 +56,8 @@ func TestMemoryCache_ImmediateExpiration(t *testing.T) {
 	time.Sleep(2 * ttl)
 
 	_, err = c.Get(ctx, key)
-	if !errors.Is(err, cache.ErrKeyExpired) {
-		t.Errorf("Expected ErrKeyExpired, got %v", err)
+	if !errors.Is(err, cache.ErrKeyNotFound) {
+		t.Errorf("Expected ErrKeyNotFound, got %v", err)
 	}
 }
 
@@ -164,8 +164,8 @@ func TestMemoryCache_MixedTTLScenarios(t *testing.T) {
 
 	// Short TTL key should be expired, others should still be there
 	_, err := c.Get(ctx, "short-ttl")
-	if !errors.Is(err, cache.ErrKeyExpired) {
-		t.Errorf("Expected ErrKeyExpired for short-ttl, got %v", err)
+	if !errors.Is(err, cache.ErrKeyNotFound) {
+		t.Errorf("Expected ErrKeyNotFound for short-ttl, got %v", err)
 	}
 
 	for key := range keys {
@@ -183,8 +183,8 @@ func TestMemoryCache_MixedTTLScenarios(t *testing.T) {
 
 	// Medium TTL key should be expired, others should still be there
 	_, err = c.Get(ctx, "medium-ttl")
-	if !errors.Is(err, cache.ErrKeyExpired) {
-		t.Errorf("Expected ErrKeyExpired for medium-ttl, got %v", err)
+	if !errors.Is(err, cache.ErrKeyNotFound) {
+		t.Errorf("Expected ErrKeyNotFound for medium-ttl, got %v", err)
 	}
 
 	for key := range keys {
@@ -366,7 +366,7 @@ func TestMemoryCache_RaceConditionWithExpiration(t *testing.T) {
 
 			// Try to get the item
 			_, getErr := c.Get(ctx, key)
-			if getErr != nil && !errors.Is(getErr, cache.ErrKeyExpired) && !errors.Is(getErr, cache.ErrKeyNotFound) {
+			if getErr != nil && !errors.Is(getErr, cache.ErrKeyNotFound) {
 				t.Errorf("Get failed: %v", getErr)
 			}
 		}(i)

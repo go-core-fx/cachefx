@@ -198,8 +198,7 @@ func (c *Typed[T]) SetOrFail(ctx context.Context, key string, value T, opts ...O
 //
 // The behavior depends on the key's existence and expiration state:
 //   - If the key exists and has not expired, returns the typed value and nil error
-//   - If the key does not exist, returns a zero value and ErrKeyNotFound
-//   - If the key exists but has expired, returns a zero value and ErrKeyExpired
+//   - If the key does not exist or has expired, returns a zero value and ErrKeyNotFound
 //
 // The retrieved bytes are automatically unmarshaled to the correct type using
 // the Unmarshal method. GetOptions can be used to modify the behavior, such as
@@ -212,8 +211,8 @@ func (c *Typed[T]) SetOrFail(ctx context.Context, key string, value T, opts ...O
 //
 // Returns:
 //   - T: The cached typed value if found and not expired, otherwise a zero value
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+//     otherwise an error
 //
 // Example:
 //
@@ -254,8 +253,8 @@ func (c *Typed[T]) Get(ctx context.Context, key string, opts ...GetOption) (T, e
 //
 // Returns:
 //   - T: The cached typed value if found and not expired, otherwise a zero value
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     ErrKeyExpired if key exists but has expired, otherwise an error
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired,
+//     otherwise an error
 //
 // Example:
 //
