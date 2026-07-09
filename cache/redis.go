@@ -320,6 +320,10 @@ func (r *RedisCache) Get(ctx context.Context, key string, opts ...GetOption) ([]
 	result, err := r.client.Eval(ctx, getAndUpdateTTLScript, []string{r.key}, key, delArg, ttlTimestamp, ttlDelta).
 		Result()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, ErrKeyNotFound
+		}
+
 		return nil, fmt.Errorf("failed to get cache item: %w", err)
 	}
 
