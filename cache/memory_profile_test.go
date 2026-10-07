@@ -9,6 +9,7 @@ import (
 	"github.com/go-core-fx/cachefx/cache"
 )
 
+//nolint:paralleltest // measures process-global allocations; concurrent tests would pollute the delta
 func TestMemoryCache_MemoryAllocationPattern(t *testing.T) {
 	// This test analyzes memory allocation patterns during cache operations
 	cache := cache.NewMemory(0)
@@ -59,6 +60,7 @@ func TestMemoryCache_MemoryAllocationPattern(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // measures process-global heap; concurrent tests would pollute the delta
 func TestMemoryCache_MemoryCleanup(t *testing.T) {
 	// This test verifies that memory is properly cleaned up after cache operations
 	cache := cache.NewMemory(0)
@@ -107,6 +109,7 @@ func TestMemoryCache_MemoryCleanup(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // measures process-global allocations; concurrent tests would pollute the delta
 func TestMemoryCache_MemoryPressure(t *testing.T) {
 	// This test simulates memory pressure scenarios
 	ctx := context.Background()
@@ -164,6 +167,7 @@ func TestMemoryCache_MemoryPressure(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // forces global GC; running it alongside other tests would perturb their timings
 func TestMemoryCache_GCStress(t *testing.T) {
 	// This test verifies cache behavior under frequent GC cycles
 	c := cache.NewMemory(0)
@@ -213,6 +217,7 @@ func TestMemoryCache_GCStress(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // measures process-global heap; concurrent tests would pollute the delta
 func TestMemoryCache_MemoryLeakDetection(t *testing.T) {
 	// This test helps detect memory leaks by creating and destroying many caches
 	ctx := context.Background()

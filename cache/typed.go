@@ -391,7 +391,7 @@ func (c *Typed[T]) Close() error {
 func newItem[T Item]() (T, error) {
 	var zero T
 
-	t := reflect.TypeOf((*T)(nil)).Elem()
+	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Pointer {
 		return zero, fmt.Errorf("%w: type %s must be a pointer", ErrFailedToCreateZeroValue, t.String())
 	}
