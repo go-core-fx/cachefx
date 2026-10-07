@@ -13,6 +13,8 @@ import (
 )
 
 func TestMemoryCache_ConcurrentReads(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -50,6 +52,8 @@ func TestMemoryCache_ConcurrentReads(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentWrites(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -97,6 +101,8 @@ func TestMemoryCache_ConcurrentWrites(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentReadWrite(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -149,6 +155,8 @@ func TestMemoryCache_ConcurrentReadWrite(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentSetAndGetAndDelete(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -197,6 +205,8 @@ func TestMemoryCache_ConcurrentSetAndGetAndDelete(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentSetOrFail(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -244,6 +254,8 @@ func TestMemoryCache_ConcurrentSetOrFail(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentDrain(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -302,6 +314,8 @@ func TestMemoryCache_ConcurrentDrain(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentCleanup(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -349,6 +363,8 @@ func TestMemoryCache_ConcurrentCleanup(t *testing.T) {
 }
 
 func TestMemoryCache_ConcurrentGetAndDelete(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -396,7 +412,9 @@ func TestMemoryCache_ConcurrentGetAndDelete(t *testing.T) {
 	}
 }
 
-func TestMemoryCache_RaceConditionDetection(_ *testing.T) {
+func TestMemoryCache_RaceConditionDetection(t *testing.T) {
+	t.Parallel()
+
 	// This test is specifically designed to detect race conditions
 	// by running many operations concurrently with the race detector enabled
 

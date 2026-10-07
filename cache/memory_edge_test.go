@@ -13,6 +13,8 @@ import (
 )
 
 func TestMemoryCache_ZeroTTL(t *testing.T) {
+	t.Parallel()
+
 	// Test cache with zero TTL (no expiration)
 	cache := cache.NewMemory(0)
 	ctx := context.Background()
@@ -39,6 +41,8 @@ func TestMemoryCache_ZeroTTL(t *testing.T) {
 }
 
 func TestMemoryCache_ImmediateExpiration(t *testing.T) {
+	t.Parallel()
+
 	// Test c with very short TTL
 	c := cache.NewMemory(0)
 	ctx := context.Background()
@@ -62,6 +66,8 @@ func TestMemoryCache_ImmediateExpiration(t *testing.T) {
 }
 
 func TestMemoryCache_EmptyKey(t *testing.T) {
+	t.Parallel()
+
 	// Test cache operations with empty key
 	cache := cache.NewMemory(0)
 	ctx := context.Background()
@@ -84,6 +90,8 @@ func TestMemoryCache_EmptyKey(t *testing.T) {
 }
 
 func TestMemoryCache_OverwriteWithDifferentTTL(t *testing.T) {
+	t.Parallel()
+
 	// Test overwriting a key with different TTL
 	c := cache.NewMemory(0)
 	ctx := context.Background()
@@ -125,6 +133,7 @@ func TestMemoryCache_OverwriteWithDifferentTTL(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts on wall-clock TTL boundaries; parallel tests could delay setup past the TTL
 func TestMemoryCache_MixedTTLScenarios(t *testing.T) {
 	// Test various TTL scenarios
 	c := cache.NewMemory(0)
@@ -198,6 +207,7 @@ func TestMemoryCache_MixedTTLScenarios(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts a wall-clock budget; parallel tests could exceed it
 func TestMemoryCache_RapidOperations(t *testing.T) {
 	// Test rapid c operations
 	c := cache.NewMemory(0)
@@ -243,6 +253,8 @@ func TestMemoryCache_RapidOperations(t *testing.T) {
 }
 
 func TestMemoryCache_CleanupOnEmptyCache(t *testing.T) {
+	t.Parallel()
+
 	// Test cleanup operation on empty cache
 	cache := cache.NewMemory(0)
 	ctx := context.Background()
@@ -272,6 +284,8 @@ func TestMemoryCache_CleanupOnEmptyCache(t *testing.T) {
 }
 
 func TestMemoryCache_DrainWithExpiredItems(t *testing.T) {
+	t.Parallel()
+
 	// Test drain operation with mix of expired and non-expired items
 	c := cache.NewMemory(0)
 	ctx := context.Background()
@@ -313,6 +327,8 @@ func TestMemoryCache_DrainWithExpiredItems(t *testing.T) {
 }
 
 func TestMemoryCache_ExtremeKeyLength(t *testing.T) {
+	t.Parallel()
+
 	// Test with very long keys
 	cache := cache.NewMemory(0)
 	ctx := context.Background()
@@ -337,6 +353,8 @@ func TestMemoryCache_ExtremeKeyLength(t *testing.T) {
 }
 
 func TestMemoryCache_RaceConditionWithExpiration(t *testing.T) {
+	t.Parallel()
+
 	// Test race conditions between expiration and access
 	c := cache.NewMemory(0)
 	ctx := context.Background()

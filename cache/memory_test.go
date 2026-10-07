@@ -10,6 +10,8 @@ import (
 )
 
 func TestMemoryCache_SetAndGet(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0) // No TTL for basic tests
 
 	ctx := context.Background()
@@ -34,6 +36,8 @@ func TestMemoryCache_SetAndGet(t *testing.T) {
 }
 
 func TestMemoryCache_SetAndGetWithTTL(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0) // No default TTL
 
 	ctx := context.Background()
@@ -59,6 +63,8 @@ func TestMemoryCache_SetAndGetWithTTL(t *testing.T) {
 }
 
 func TestMemoryCache_SetAndGetWithValidUntil(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0) // No default TTL
 
 	ctx := context.Background()
@@ -84,6 +90,8 @@ func TestMemoryCache_SetAndGetWithValidUntil(t *testing.T) {
 }
 
 func TestMemoryCache_SetAndGetWithDefaultTTL(t *testing.T) {
+	t.Parallel()
+
 	defaultTTL := 1 * time.Hour
 	cache := cache.NewMemory(defaultTTL) // With default TTL
 
@@ -109,6 +117,8 @@ func TestMemoryCache_SetAndGetWithDefaultTTL(t *testing.T) {
 }
 
 func TestMemoryCache_GetNotFound(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -121,6 +131,8 @@ func TestMemoryCache_GetNotFound(t *testing.T) {
 }
 
 func TestMemoryCache_SetOrFailNewKey(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -145,6 +157,8 @@ func TestMemoryCache_SetOrFailNewKey(t *testing.T) {
 }
 
 func TestMemoryCache_SetOrFailExistingKey(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -176,6 +190,8 @@ func TestMemoryCache_SetOrFailExistingKey(t *testing.T) {
 }
 
 func TestMemoryCache_Delete(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -202,6 +218,8 @@ func TestMemoryCache_Delete(t *testing.T) {
 }
 
 func TestMemoryCache_DeleteNonExistent(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -215,6 +233,8 @@ func TestMemoryCache_DeleteNonExistent(t *testing.T) {
 }
 
 func TestMemoryCache_GetAndDelete(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -245,6 +265,8 @@ func TestMemoryCache_GetAndDelete(t *testing.T) {
 }
 
 func TestMemoryCache_GetAndDeleteNonExistent(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -258,6 +280,8 @@ func TestMemoryCache_GetAndDeleteNonExistent(t *testing.T) {
 }
 
 func TestMemoryCache_Drain(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -307,6 +331,8 @@ func TestMemoryCache_Drain(t *testing.T) {
 }
 
 func TestMemoryCache_DrainEmpty(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -323,6 +349,8 @@ func TestMemoryCache_DrainEmpty(t *testing.T) {
 }
 
 func TestMemoryCache_Cleanup(t *testing.T) {
+	t.Parallel()
+
 	c := cache.NewMemory(0) // No default TTL
 
 	ctx := context.Background()
@@ -359,6 +387,8 @@ func TestMemoryCache_Cleanup(t *testing.T) {
 }
 
 func TestMemoryCache_CleanupNoExpired(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -389,6 +419,8 @@ func TestMemoryCache_CleanupNoExpired(t *testing.T) {
 }
 
 func TestMemoryCache_Overwrite(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -420,6 +452,8 @@ func TestMemoryCache_Overwrite(t *testing.T) {
 }
 
 func TestMemoryCache_EmptyValue(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -444,6 +478,8 @@ func TestMemoryCache_EmptyValue(t *testing.T) {
 }
 
 func TestMemoryCache_SpecialCharacters(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
@@ -468,6 +504,8 @@ func TestMemoryCache_SpecialCharacters(t *testing.T) {
 }
 
 func TestMemoryCache_LargeValue(t *testing.T) {
+	t.Parallel()
+
 	cache := cache.NewMemory(0)
 
 	ctx := context.Background()
