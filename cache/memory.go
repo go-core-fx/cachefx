@@ -204,7 +204,9 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 //	// Get and delete atomically
 //	value, err := cache.Get(ctx, "temp:xyz", cache.AndDelete())
 func (m *MemoryCache) Get(_ context.Context, key string, opts ...GetOption) ([]byte, error) {
-	return m.getValue(func() (*memoryItem, bool) {
+	// The getter releases its lock before returning so that getItem can take
+	// a write lock when it needs to remove an expired entry.
+	return m.getValue(key, func() (*memoryItem, bool) {
 		if len(opts) == 0 {
 			m.mux.RLock()
 			item, ok := m.items[key]
@@ -370,14 +372,19 @@ func (m *MemoryCache) newItem(value []byte, opts ...Option) *memoryItem {
 // This is a helper method that wraps the getter function and adds expiration checking.
 // It returns ErrKeyNotFound if the item doesn't exist or has expired.
 //
+// An expired item is removed from the map before returning, so entries do not
+// accumulate for the lifetime of the cache when their keys are never read
+// again. The getter releases its lock before returning, so the removal can
+// take the write lock it needs.
+//
 // Parameters:
+//   - key: The key the getter reads, used to evict an expired entry
 //   - getter: A function that returns a memory item and a boolean indicating if it was found
 //
 // Returns:
 //   - *memoryItem: The memory item if found and not expired
-//   - error: nil on success, ErrKeyNotFound if key doesn't exist,
-//     or has expired
-func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, error) {
+//   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired
+func (m *MemoryCache) getItem(key string, getter func() (*memoryItem, bool)) (*memoryItem, error) {
 	item, ok := getter()
 
 	if !ok {
@@ -385,6 +392,13 @@ func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, e
 	}
 
 	if item.isExpired(time.Now()) {
+		// The getter may only hold a read lock, so the removal needs its own
+		// write lock. Deleting an absent key is a no-op, which covers the
+		// race with a concurrent Set or Delete.
+		m.mux.Lock()
+		delete(m.items, key)
+		m.mux.Unlock()
+
 		return nil, ErrKeyNotFound
 	}
 
@@ -397,13 +411,14 @@ func (m *MemoryCache) getItem(getter func() (*memoryItem, bool)) (*memoryItem, e
 // extracts the byte slice value from it.
 //
 // Parameters:
+//   - key: The key the getter reads, used to evict an expired entry
 //   - getter: A function that returns a memory item and a boolean indicating if it was found
 //
 // Returns:
 //   - []byte: The cached value if found and not expired
 //   - error: nil on success, ErrKeyNotFound if key doesn't exist or has expired
-func (m *MemoryCache) getValue(getter func() (*memoryItem, bool)) ([]byte, error) {
-	item, err := m.getItem(getter)
+func (m *MemoryCache) getValue(key string, getter func() (*memoryItem, bool)) ([]byte, error) {
+	item, err := m.getItem(key, getter)
 	if err != nil {
 		return nil, err
 	}
