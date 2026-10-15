@@ -74,7 +74,9 @@ func TestMemoryCache_CleanupIsNoOpAfterExpiredGet(t *testing.T) {
 
 // TestMemoryCache_ConcurrentExpiredGetWithSet verifies that the write lock
 // taken to evict an expired entry does not deadlock or race with concurrent
-// writers on the same key.
+// writers on the same key, and that the eviction drops only the entry it read:
+// the writers below store a non-expiring value, so a stale Get deleting their
+// replacement would be visible in the final state.
 func TestMemoryCache_ConcurrentExpiredGetWithSet(t *testing.T) {
 	c := cache.NewMemory(0)
 	ctx := context.Background()
@@ -97,12 +99,16 @@ func TestMemoryCache_ConcurrentExpiredGetWithSet(t *testing.T) {
 				return
 			}
 
-			_ = c.Set(ctx, "key", []byte("value"), cache.WithTTL(time.Millisecond))
+			_ = c.Set(ctx, "key", []byte("value"))
 		}(i)
 	}
 
 	for range numGoroutines {
 		<-done
+	}
+
+	if got, err := c.Get(ctx, "key"); err != nil || string(got) != "value" {
+		t.Errorf("Expected concurrent Set value to survive, got %q, err %v", got, err)
 	}
 }
 

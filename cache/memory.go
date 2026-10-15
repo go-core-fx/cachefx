@@ -10,8 +10,9 @@ import (
 //
 // This implementation stores all data in a Go map protected by a read-write mutex,
 // making it safe for concurrent access by multiple goroutines. Items are automatically
-// checked for expiration on access, but expired items remain in memory until
-// explicitly removed by a Cleanup operation or overwritten.
+// checked for expiration on access, and an expired item is removed by the Get that
+// observes it. Entries that are never read again stay in memory until an explicit
+// Cleanup operation or an overwrite.
 //
 // The memory cache is suitable for:
 //   - Single-process applications
@@ -393,10 +394,12 @@ func (m *MemoryCache) getItem(key string, getter func() (*memoryItem, bool)) (*m
 
 	if item.isExpired(time.Now()) {
 		// The getter may only hold a read lock, so the removal needs its own
-		// write lock. Deleting an absent key is a no-op, which covers the
-		// race with a concurrent Set or Delete.
+		// write lock. A concurrent Set may have replaced the entry in between,
+		// so delete only while the map still holds the item this call read.
 		m.mux.Lock()
-		delete(m.items, key)
+		if current, found := m.items[key]; found && current == item {
+			delete(m.items, key)
+		}
 		m.mux.Unlock()
 
 		return nil, ErrKeyNotFound
