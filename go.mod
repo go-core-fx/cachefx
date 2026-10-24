@@ -3,6 +3,7 @@ module github.com/go-core-fx/cachefx
 go 1.24.3
 
 require (
+	github.com/go-core-fx/fxutil v0.0.2
 	github.com/redis/go-redis/v9 v9.17.2
 	go.uber.org/fx v1.24.0
 	go.uber.org/zap v1.27.1
