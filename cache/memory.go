@@ -1,7 +1,12 @@
 package cache
 
 import (
+	"container/list"
 	"context"
+	"fmt"
+	"math"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -14,6 +19,12 @@ import (
 // observes it. Entries that are never read again stay in memory until an explicit
 // Cleanup operation or an overwrite.
 //
+// Constructed with [WithMaxEntries], the cache also caps how many entries it
+// holds: inserting a new key while at the cap evicts the least recently used
+// entry. See [WithMaxEntries] for the full recency rules. An unbounded cache
+// keeps no recency order and serves reads under the read lock; a capped cache
+// takes the write lock on a Get hit to refresh recency.
+//
 // The memory cache is suitable for:
 //   - Single-process applications
 //   - Caching small to medium amounts of data
@@ -25,10 +36,21 @@ type MemoryCache struct {
 	items map[string]*memoryItem
 	ttl   time.Duration
 
+	// maxEntries caps the number of entries when positive. The cache is
+	// unbounded when it is zero or less.
+	maxEntries int
+
+	// elems indexes order by key, and order lists keys from most to least
+	// recently used. Both are nil when the cache is unbounded; otherwise
+	// every key in items has an element in order and elems.
+	elems map[string]*list.Element
+	order *list.List
+
 	mux sync.RWMutex
 }
 
-// NewMemory creates a new in-memory cache with the specified default TTL.
+// NewMemory creates a new in-memory cache with the specified default TTL
+// and optional constructor options such as [WithMaxEntries].
 //
 // The TTL parameter sets the default time-to-live for items stored in the cache.
 // A TTL of zero means items do not expire by default, but individual items
@@ -36,6 +58,7 @@ type MemoryCache struct {
 //
 // Parameters:
 //   - ttl: The default TTL for cache items. Zero means no expiration.
+//   - opts: Optional constructor options (e.g., a maximum entry count)
 //
 // Returns:
 //   - *MemoryCache: A new in-memory cache instance
@@ -47,13 +70,94 @@ type MemoryCache struct {
 //
 //	// Create a cache with no expiration
 //	cache := cache.NewMemory(0)
-func NewMemory(ttl time.Duration) *MemoryCache {
-	return &MemoryCache{
-		items: make(map[string]*memoryItem),
-		ttl:   ttl,
-
-		mux: sync.RWMutex{},
+//
+//	// Create a cache that holds at most 1000 entries
+//	cache := cache.NewMemory(time.Hour, cache.WithMaxEntries(1000))
+func NewMemory(ttl time.Duration, opts ...MemoryOption) *MemoryCache {
+	cfg := new(memoryConfig)
+	for _, opt := range opts {
+		opt(cfg)
 	}
+
+	m := &MemoryCache{
+		items:      make(map[string]*memoryItem),
+		ttl:        ttl,
+		maxEntries: cfg.maxEntries,
+		elems:      nil,
+		order:      nil,
+		mux:        sync.RWMutex{},
+	}
+
+	if m.maxEntries > 0 {
+		m.elems = make(map[string]*list.Element)
+		m.order = list.New()
+	}
+
+	return m
+}
+
+// NewMemoryURL creates an in-memory cache from a memory:// URL, letting the
+// backend parse its own options the way NewRedis parses redis:// URLs.
+//
+// The supported form is "memory://?max_entries=N", where N caps the cache at
+// that many entries with least-recently-used eviction (see [WithMaxEntries]).
+// An absent parameter leaves the cache unbounded; the default TTL is zero, so
+// entries do not expire unless a per-item option sets a TTL. Any other scheme,
+// an unparseable URL, or a present parameter that is not a non-negative integer
+// returns an error wrapping [ErrInvalidConfig].
+//
+// Parameters:
+//   - rawURL: The memory backend URL to configure the cache from
+//
+// Returns:
+//   - *MemoryCache: A new in-memory cache instance
+//   - error: An error wrapping ErrInvalidConfig when the URL is invalid
+//
+// Example:
+//
+//	// Cap the cache at 1000 entries
+//	c, err := cache.NewMemoryURL("memory://?max_entries=1000")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func NewMemoryURL(rawURL string) (*MemoryCache, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to parse memory url: %w", ErrInvalidConfig, err)
+	}
+
+	if u.Scheme != "memory" {
+		return nil, fmt.Errorf("%w: unsupported scheme %q", ErrInvalidConfig, u.Scheme)
+	}
+
+	maxEntries, err := maxEntriesFromQuery(u.Query())
+	if err != nil {
+		return nil, err
+	}
+
+	return NewMemory(0, WithMaxEntries(maxEntries)), nil
+}
+
+// maxEntriesFromQuery reads the max_entries query parameter: the entry cap,
+// or zero when the parameter is absent for an unbounded cache. A present
+// parameter must be a non-negative integer, so a bad configuration fails
+// instead of silently dropping the cap.
+func maxEntriesFromQuery(q url.Values) (int, error) {
+	if !q.Has("max_entries") {
+		return 0, nil
+	}
+
+	raw := q.Get("max_entries")
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid max_entries %q: %w", ErrInvalidConfig, raw, err)
+	}
+
+	if n < 0 {
+		return 0, fmt.Errorf("%w: max_entries must not be negative: %d", ErrInvalidConfig, n)
+	}
+
+	return n, nil
 }
 
 // memoryItem represents a single item in the memory cache.
@@ -89,6 +193,92 @@ func (i *memoryItem) isExpired(now time.Time) bool {
 	}
 
 	return !i.validUntil.IsZero() && now.After(i.validUntil)
+}
+
+// trackUse marks key as the most recently used entry.
+//
+// It is a no-op when the cache is unbounded or the key is not tracked.
+// The caller must hold the write lock.
+func (m *MemoryCache) trackUse(key string) {
+	if m.order == nil {
+		return
+	}
+
+	if elem, ok := m.elems[key]; ok {
+		m.order.MoveToFront(elem)
+	}
+}
+
+// trackInsert registers key as the most recently used entry, tracking it if
+// it is not tracked yet and moving it to the front if it is.
+//
+// It is a no-op when the cache is unbounded. The caller must hold the write
+// lock.
+func (m *MemoryCache) trackInsert(key string) {
+	if m.order == nil {
+		return
+	}
+
+	if elem, ok := m.elems[key]; ok {
+		m.order.MoveToFront(elem)
+
+		return
+	}
+
+	m.elems[key] = m.order.PushFront(key)
+}
+
+// trackRemove drops key from the recency order.
+//
+// It is a no-op when the cache is unbounded or the key is not tracked. The
+// caller must hold the write lock.
+func (m *MemoryCache) trackRemove(key string) {
+	if m.order == nil {
+		return
+	}
+
+	if elem, ok := m.elems[key]; ok {
+		m.order.Remove(elem)
+		delete(m.elems, key)
+	}
+}
+
+// trackReset empties the recency order.
+//
+// It is a no-op when the cache is unbounded. The caller must hold the write
+// lock.
+func (m *MemoryCache) trackReset() {
+	if m.order == nil {
+		return
+	}
+
+	m.order.Init()
+	clear(m.elems)
+}
+
+// evictLocked evicts the least recently used entries until the cache fits
+// its maximum entry count.
+//
+// It is a no-op when the cache is unbounded. The caller must hold the write
+// lock.
+func (m *MemoryCache) evictLocked() {
+	if m.order == nil {
+		return
+	}
+
+	for len(m.items) > m.maxEntries {
+		back := m.order.Back()
+		if back == nil {
+			break
+		}
+
+		if key, ok := back.Value.(string); ok {
+			delete(m.items, key)
+			delete(m.elems, key)
+		}
+
+		m.order.Remove(back)
+	}
 }
 
 // Cleanup removes all expired items from the memory cache.
@@ -133,6 +323,7 @@ func (m *MemoryCache) Cleanup(_ context.Context) error {
 func (m *MemoryCache) Delete(_ context.Context, key string) error {
 	m.mux.Lock()
 	delete(m.items, key)
+	m.trackRemove(key)
 	m.mux.Unlock()
 
 	return nil
@@ -165,6 +356,7 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 	m.cleanup(func() {
 		cpy = m.items
 		m.items = make(map[string]*memoryItem)
+		m.trackReset()
 	})
 
 	items := make(map[string][]byte, len(cpy))
@@ -180,6 +372,10 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 // The behavior depends on the key's existence and expiration state:
 //   - If the key exists and has not expired, returns the value and nil error
 //   - If the key does not exist or has expired, returns nil and ErrKeyNotFound
+//
+// On an existing key, Get marks the key as the most recently used when the
+// cache has a maximum entry count (see [WithMaxEntries]); an unbounded cache
+// performs no recency bookkeeping.
 //
 // GetOptions can be used to modify the behavior, such as updating TTL,
 // deleting the key after retrieval, or setting a new expiration time.
@@ -207,15 +403,42 @@ func (m *MemoryCache) Drain(_ context.Context) (map[string][]byte, error) {
 func (m *MemoryCache) Get(_ context.Context, key string, opts ...GetOption) ([]byte, error) {
 	// The getter releases its lock before returning so that getItem can take
 	// a write lock when it needs to remove an expired entry.
-	return m.getValue(key, func() (*memoryItem, bool) {
-		if len(opts) == 0 {
+	switch {
+	case len(opts) == 0 && m.order == nil:
+		return m.getValue(key, func() (*memoryItem, bool) {
 			m.mux.RLock()
 			item, ok := m.items[key]
 			m.mux.RUnlock()
 
 			return item, ok
-		}
+		})
+	case len(opts) == 0:
+		// A capped cache refreshes recency on a hit, which takes the write lock.
+		return m.getValue(key, func() (*memoryItem, bool) {
+			m.mux.Lock()
+			defer m.mux.Unlock()
 
+			now := time.Now()
+			item, ok := m.items[key]
+			if ok && !item.isExpired(now) {
+				m.trackUse(key)
+			}
+
+			return item, ok
+		})
+	default:
+		return m.getValue(key, m.optionsGetter(key, opts))
+	}
+}
+
+// optionsGetter returns a getter that applies the given GetOptions under the
+// write lock, refreshing the key's recency before rescheduling or deleting
+// the entry.
+//
+// The getter releases its lock before returning so that getItem can take
+// a write lock when it needs to remove an expired entry.
+func (m *MemoryCache) optionsGetter(key string, opts []GetOption) func() (*memoryItem, bool) {
+	return func() (*memoryItem, bool) {
 		o := new(getOptions)
 		o.apply(opts...)
 
@@ -231,8 +454,12 @@ func (m *MemoryCache) Get(_ context.Context, key string, opts ...GetOption) ([]b
 
 		if o.delete {
 			delete(m.items, key)
+			m.trackRemove(key)
+
 			return item, ok
 		}
+
+		m.trackUse(key)
 
 		switch {
 		case o.validUntil != nil:
@@ -254,7 +481,7 @@ func (m *MemoryCache) Get(_ context.Context, key string, opts ...GetOption) ([]b
 		}
 
 		return item, ok
-	})
+	}
 }
 
 // GetAndDelete retrieves the value for the given key and atomically deletes it from the memory cache.
@@ -279,10 +506,77 @@ func (m *MemoryCache) GetAndDelete(ctx context.Context, key string) ([]byte, err
 	return m.Get(ctx, key, AndDelete())
 }
 
+// Increment atomically adds delta to the integer counter stored under the given key
+// and returns the new value. A negative delta decrements the counter.
+//
+// A missing or expired key is created holding delta, applying the cache's default TTL
+// unless overridden by options. An existing key keeps its value's TTL and the options
+// are ignored. The stored value must be the decimal representation of an int64
+// (strconv.FormatInt); anything else returns ErrNotAnInteger. The counter is left
+// unchanged when the result would leave the int64 range.
+//
+// On a capped cache (see [WithMaxEntries]) Increment marks the key as the most
+// recently used, both when it updates an existing counter and when it creates
+// one; a created counter counts toward the cap and may evict the least
+// recently used entry.
+//
+// The operation is performed atomically with a write lock, so concurrent Increment
+// calls never lose updates.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts (currently unused but kept for interface compatibility)
+//   - key: The key of the counter to increment
+//   - delta: The signed value to add to the counter
+//   - opts: Optional expiration applied only when the counter is created (e.g., custom TTL)
+//
+// Returns:
+//   - int64: The new counter value
+//   - error: nil on success, ErrNotAnInteger if the stored value is not an int64
+//     decimal, ErrCounterOverflow if the result would leave the int64 range,
+//     otherwise an error
+//
+// Example:
+//
+//	// Count page views; the first call creates the counter with 1
+//	n, err := cache.Increment(ctx, "views:home", 1)
+func (m *MemoryCache) Increment(_ context.Context, key string, delta int64, opts ...Option) (int64, error) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	item, ok := m.items[key]
+	if !ok || item.isExpired(time.Now()) {
+		m.items[key] = m.newItem([]byte(strconv.FormatInt(delta, 10)), opts...)
+		m.trackInsert(key)
+		m.evictLocked()
+
+		return delta, nil
+	}
+
+	m.trackUse(key)
+
+	cur, err := strconv.ParseInt(string(item.value), 10, 64)
+	if err != nil || strconv.FormatInt(cur, 10) != string(item.value) {
+		return 0, ErrNotAnInteger
+	}
+
+	next, ok := addInt64(cur, delta)
+	if !ok {
+		return 0, ErrCounterOverflow
+	}
+
+	item.value = []byte(strconv.FormatInt(next, 10))
+
+	return next, nil
+}
+
 // Set stores the value for the given key in the memory cache, overwriting any existing value.
 //
 // The value will be stored with the default TTL configured for the cache,
 // unless overridden by options. If the key already exists, its value and TTL will be updated.
+//
+// Set never changes the recency of a key already present: on a capped cache
+// (see [WithMaxEntries]) the entry keeps its position in the eviction order,
+// while a key that is not present is inserted as the most recently used.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeouts (currently unused but kept for interface compatibility)
@@ -302,7 +596,12 @@ func (m *MemoryCache) GetAndDelete(ctx context.Context, key string) ([]byte, err
 //	err := cache.Set(ctx, "session:abc", []byte("session data"), cache.WithTTL(30*time.Minute))
 func (m *MemoryCache) Set(_ context.Context, key string, value []byte, opts ...Option) error {
 	m.mux.Lock()
+	_, exists := m.items[key]
 	m.items[key] = m.newItem(value, opts...)
+	if !exists {
+		m.trackInsert(key)
+	}
+	m.evictLocked()
 	m.mux.Unlock()
 
 	return nil
@@ -313,6 +612,10 @@ func (m *MemoryCache) Set(_ context.Context, key string, value []byte, opts ...O
 // This is an atomic operation that prevents race conditions when multiple goroutines
 // might try to set the same key simultaneously. If the key exists but has expired,
 // it will be overwritten.
+//
+// Recency follows Set: a key already present (even an expired one) keeps its
+// position in a capped cache's eviction order, while a key that is not
+// present is inserted as the most recently used (see [WithMaxEntries]).
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeouts (currently unused but kept for interface compatibility)
@@ -335,13 +638,17 @@ func (m *MemoryCache) SetOrFail(_ context.Context, key string, value []byte, opt
 	m.mux.Lock()
 	defer m.mux.Unlock()
 
-	if item, ok := m.items[key]; ok {
-		if !item.isExpired(time.Now()) {
-			return ErrKeyExists
-		}
+	item, exists := m.items[key]
+	if exists && !item.isExpired(time.Now()) {
+		return ErrKeyExists
 	}
 
 	m.items[key] = m.newItem(value, opts...)
+	if !exists {
+		m.trackInsert(key)
+	}
+	m.evictLocked()
+
 	return nil
 }
 
@@ -399,6 +706,7 @@ func (m *MemoryCache) getItem(key string, getter func() (*memoryItem, bool)) (*m
 		m.mux.Lock()
 		if current, found := m.items[key]; found && current == item {
 			delete(m.items, key)
+			m.trackRemove(key)
 		}
 		m.mux.Unlock()
 
@@ -429,6 +737,16 @@ func (m *MemoryCache) getValue(key string, getter func() (*memoryItem, bool)) ([
 	return item.value, nil
 }
 
+// addInt64 adds a and b, reporting false when the result would overflow or
+// underflow the int64 range.
+func addInt64(a, b int64) (int64, bool) {
+	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
+		return 0, false
+	}
+
+	return a + b, true
+}
+
 // cleanup removes all expired items from the memory cache and executes the provided callback.
 //
 // This method scans through all items in the cache and removes any that have expired.
@@ -444,6 +762,7 @@ func (m *MemoryCache) cleanup(cb func()) {
 	for key, item := range m.items {
 		if item.isExpired(t) {
 			delete(m.items, key)
+			m.trackRemove(key)
 		}
 	}
 
