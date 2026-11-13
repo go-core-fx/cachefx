@@ -207,3 +207,46 @@ func AndDelete() GetOption {
 		o.delete = true
 	}
 }
+
+// memoryConfig holds constructor-time configuration for a [MemoryCache].
+type memoryConfig struct {
+	maxEntries int
+}
+
+// MemoryOption configures a [MemoryCache] at construction time.
+//
+// Unlike [Option], which configures a single item, a MemoryOption configures
+// the cache as a whole and is passed to [NewMemory].
+type MemoryOption func(*memoryConfig)
+
+// WithMaxEntries caps the number of entries a [MemoryCache] holds.
+//
+// When a new key is inserted while the cache is at the cap, the least
+// recently used entry is evicted until the cache fits. Recency is refreshed
+// by a Get on an existing key and by Increment; Set and SetOrFail never
+// change the recency of a key already present, so an entry written but
+// never read can be evicted before an older, frequently read one. A key that
+// is not present is inserted as the most recently used. Expired entries
+// count toward the cap until a Get observes them or a Cleanup removes them.
+//
+// A value of zero or less leaves the cache unbounded, which is the default.
+//
+// A capped cache trades read concurrency for recency bookkeeping: refreshing
+// recency on a Get hit takes the write lock, where an unbounded cache serves
+// the same read under a read lock.
+//
+// Parameters:
+//   - n: Maximum number of entries, or zero or less for no cap
+//
+// Returns:
+//   - MemoryOption: An option that sets the cap when passed to NewMemory
+//
+// Example:
+//
+//	// Keep at most 1000 entries, evicting the least recently used
+//	c := cache.NewMemory(time.Hour, cache.WithMaxEntries(1000))
+func WithMaxEntries(n int) MemoryOption {
+	return func(cfg *memoryConfig) {
+		cfg.maxEntries = n
+	}
+}
