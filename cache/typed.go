@@ -397,7 +397,7 @@ func newItem[T Item]() (T, error) {
 	}
 
 	v := reflect.New(t.Elem())
-	item, ok := v.Interface().(T)
+	item, ok := reflect.TypeAssert[T](v)
 	if !ok {
 		return zero, fmt.Errorf("%w: cannot create value of type %s", ErrFailedToCreateZeroValue, t.String())
 	}

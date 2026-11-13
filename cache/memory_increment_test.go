@@ -267,17 +267,14 @@ func TestMemoryCache_IncrementConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for range incrementsPerGoroutine {
 				if _, err := c.Increment(ctx, key, 1); err != nil {
 					t.Errorf("Increment failed: %v", err)
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
