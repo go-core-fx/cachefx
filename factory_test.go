@@ -145,6 +145,90 @@ func TestNewSweeper_RejectsNonPositiveInterval(t *testing.T) {
 	}
 }
 
+// TestFactory_MemoryMaxEntries checks that the memory backend's max_entries
+// URL parameter caps the caches the factory hands out, and that an absent or
+// zero parameter leaves them unbounded.
+func TestFactory_MemoryMaxEntries(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		url     string
+		evicted bool
+	}{
+		{name: "no parameter", url: "memory://"},
+		{name: "zero parameter", url: "memory://?max_entries=0"},
+		{name: "cap of two", url: "memory://?max_entries=2", evicted: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			factory, err := cachefx.NewFactory(cachefx.Config{URL: tc.url})
+			if err != nil {
+				t.Fatalf("NewFactory failed: %v", err)
+			}
+
+			c, err := factory.New("sessions")
+			if err != nil {
+				t.Fatalf("New failed: %v", err)
+			}
+
+			for _, key := range []string{"k1", "k2", "k3"} {
+				if err = c.Set(ctx, key, []byte(key)); err != nil {
+					t.Fatalf("Set(%q) failed: %v", key, err)
+				}
+			}
+
+			_, err = c.Get(ctx, "k1")
+			if tc.evicted {
+				if !errors.Is(err, cache.ErrKeyNotFound) {
+					t.Fatalf("Get(k1) error = %v, want ErrKeyNotFound: the cap must evict the oldest key", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Get(k1) failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestFactory_MemoryMaxEntriesRejectsInvalid checks that the URL reaches the
+// cache backend unvalidated: NewFactory accepts it, and creating the cache
+// fails instead of silently producing an unbounded cache.
+func TestFactory_MemoryMaxEntriesRejectsInvalid(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{name: "negative", url: "memory://?max_entries=-1"},
+		{name: "not a number", url: "memory://?max_entries=abc"},
+		{name: "empty value", url: "memory://?max_entries="},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			factory, err := cachefx.NewFactory(cachefx.Config{URL: tc.url})
+			if err != nil {
+				t.Fatalf("NewFactory failed: %v", err)
+			}
+
+			if _, err = factory.New("sessions"); !errors.Is(err, cache.ErrInvalidConfig) {
+				t.Fatalf("New(%q) error = %v, want ErrInvalidConfig", tc.url, err)
+			}
+		})
+	}
+}
+
 // failingCache fails every Cleanup with err.
 type failingCache struct {
 	*stubCache
