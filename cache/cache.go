@@ -158,6 +158,44 @@ type Cache interface {
 	//	}
 	SetOrFail(ctx context.Context, key string, value []byte, opts ...Option) error
 
+	// Increment atomically adds delta to the integer counter stored under the given
+	// key and returns the new value. A negative delta decrements the counter.
+	//
+	// A counter value is the decimal representation of an int64 as produced by
+	// strconv.FormatInt, so Get returns those bytes unchanged. Writing an arbitrary
+	// value with Set replaces the counter; a subsequent Increment then returns
+	// ErrNotAnInteger.
+	//
+	// The behavior depends on the key's existence and expiration state:
+	//   - If the key is missing or has expired, it is created holding delta, applying
+	//     the cache's default TTL unless overridden by options
+	//   - If the key exists and has not expired, its value is updated and its TTL is
+	//     preserved; options are ignored
+	//
+	// The operation is atomic: concurrent Increment calls on the same key never lose
+	// updates. The counter is left unchanged when it would overflow or underflow.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - key: The key of the counter to increment
+	//   - delta: The signed value to add to the counter
+	//   - opts: Optional expiration applied only when the counter is created
+	//     (e.g., custom TTL)
+	//
+	// Returns:
+	//   - int64: The new counter value
+	//   - error: nil on success, ErrNotAnInteger if the stored value is not an int64
+	//     decimal, ErrCounterOverflow if the result would leave the int64 range,
+	//     otherwise an error describing the failure
+	//
+	// Example:
+	//	// Count page views; the first call creates the counter with 1
+	//	n, err := cache.Increment(ctx, "views:home", 1)
+	//
+	//	// Reserve from a quota that expires a day after it is first touched
+	//	n, err = cache.Increment(ctx, "quota:user:123", -1, cache.WithTTL(24*time.Hour))
+	Increment(ctx context.Context, key string, delta int64, opts ...Option) (int64, error)
+
 	// Get retrieves the value for the given key from the cache.
 	//
 	// The behavior depends on the key's existence and expiration state:
