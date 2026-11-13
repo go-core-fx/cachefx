@@ -107,7 +107,7 @@ func NewFactory(config Config) (Factory, error) {
 	switch u.Scheme {
 	case "memory":
 		return newFactory("", func(_ string) (cache.Cache, error) {
-			return cache.NewMemory(0), nil
+			return cache.NewMemoryURL(config.URL)
 		}), nil
 	case "redis":
 		return newFactory("", func(name string) (cache.Cache, error) {

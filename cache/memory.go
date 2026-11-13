@@ -3,7 +3,9 @@ package cache
 import (
 	"container/list"
 	"context"
+	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -92,6 +94,70 @@ func NewMemory(ttl time.Duration, opts ...MemoryOption) *MemoryCache {
 	}
 
 	return m
+}
+
+// NewMemoryURL creates an in-memory cache from a memory:// URL, letting the
+// backend parse its own options the way NewRedis parses redis:// URLs.
+//
+// The supported form is "memory://?max_entries=N", where N caps the cache at
+// that many entries with least-recently-used eviction (see [WithMaxEntries]).
+// An absent parameter leaves the cache unbounded; the default TTL is zero, so
+// entries do not expire unless a per-item option sets a TTL. Any other scheme,
+// an unparseable URL, or a present parameter that is not a non-negative integer
+// returns an error wrapping [ErrInvalidConfig].
+//
+// Parameters:
+//   - rawURL: The memory backend URL to configure the cache from
+//
+// Returns:
+//   - *MemoryCache: A new in-memory cache instance
+//   - error: An error wrapping ErrInvalidConfig when the URL is invalid
+//
+// Example:
+//
+//	// Cap the cache at 1000 entries
+//	c, err := cache.NewMemoryURL("memory://?max_entries=1000")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func NewMemoryURL(rawURL string) (*MemoryCache, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to parse memory url: %w", ErrInvalidConfig, err)
+	}
+
+	if u.Scheme != "memory" {
+		return nil, fmt.Errorf("%w: unsupported scheme %q", ErrInvalidConfig, u.Scheme)
+	}
+
+	maxEntries, err := maxEntriesFromQuery(u.Query())
+	if err != nil {
+		return nil, err
+	}
+
+	return NewMemory(0, WithMaxEntries(maxEntries)), nil
+}
+
+// maxEntriesFromQuery reads the max_entries query parameter: the entry cap,
+// or zero when the parameter is absent for an unbounded cache. A present
+// parameter must be a non-negative integer, so a bad configuration fails
+// instead of silently dropping the cap.
+func maxEntriesFromQuery(q url.Values) (int, error) {
+	if !q.Has("max_entries") {
+		return 0, nil
+	}
+
+	raw := q.Get("max_entries")
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid max_entries %q: %w", ErrInvalidConfig, raw, err)
+	}
+
+	if n < 0 {
+		return 0, fmt.Errorf("%w: max_entries must not be negative: %d", ErrInvalidConfig, n)
+	}
+
+	return n, nil
 }
 
 // memoryItem represents a single item in the memory cache.
