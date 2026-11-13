@@ -10,6 +10,7 @@
 //   - Atomic operations for consistency
 //   - Concurrent-safe implementations
 //   - Configurable expiration policies
+//   - Optional maximum entry count with least-recently-used eviction (memory cache)
 //   - Support for custom serialization through the Item interface
 //
 // Basic Usage:
