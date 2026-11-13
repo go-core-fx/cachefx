@@ -260,6 +260,32 @@ func (c *stubCache) GetAndDelete(ctx context.Context, key string) ([]byte, error
 	return value, nil
 }
 
+func (c *stubCache) Increment(_ context.Context, key string, delta int64, _ ...cache.Option) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, ok := c.items[key]
+	if !ok || item.expired(time.Now()) {
+		c.items[key] = stubItem{
+			value:      []byte(strconv.FormatInt(delta, 10)),
+			validUntil: time.Now().Add(stubTTL),
+		}
+
+		return delta, nil
+	}
+
+	cur, err := strconv.ParseInt(string(item.value), 10, 64)
+	if err != nil {
+		return 0, cache.ErrNotAnInteger
+	}
+
+	cur += delta
+	item.value = []byte(strconv.FormatInt(cur, 10))
+	c.items[key] = item
+
+	return cur, nil
+}
+
 func (c *stubCache) Delete(_ context.Context, key string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

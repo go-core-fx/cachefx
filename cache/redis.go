@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,7 +48,31 @@ elseif ttlDelta > 0 then
   redis.call('HExpire', KEYS[1], newTtl, 'FIELDS', 1, field)
 end
 
-return value
+	return value
+`
+
+	// incrementScript atomically increments a hash field, creating it when missing
+	// and applying the expiry only to a field it creates. Millisecond precision
+	// keeps sub-second TTLs intact instead of truncating them to a whole second.
+	// The result is returned as a string so values beyond the Lua number precision
+	// round-trip exactly, and a freshly created field returns its delta directly
+	// because the expiry may have already removed it.
+	incrementScript = `
+local field = ARGV[1]
+local delta = ARGV[2]
+local ttlMs = tonumber(ARGV[3]) or 0
+
+local existed = redis.call('HEXISTS', KEYS[1], field)
+if existed == 0 then
+  redis.call('HSET', KEYS[1], field, delta)
+  if ttlMs > 0 then
+    redis.call('HPEXPIREAT', KEYS[1], ttlMs, 'FIELDS', 1, field)
+  end
+  return delta
+end
+
+redis.call('HINCRBY', KEYS[1], field, delta)
+return redis.call('HGET', KEYS[1], field)
 `
 )
 
@@ -354,6 +379,68 @@ func (r *RedisCache) Get(ctx context.Context, key string, opts ...GetOption) ([]
 //	value, err := redisCache.GetAndDelete(ctx, "queue:item:123")
 func (r *RedisCache) GetAndDelete(ctx context.Context, key string) ([]byte, error) {
 	return r.Get(ctx, key, AndDelete())
+}
+
+// Increment atomically adds delta to the integer counter stored under the given key
+// and returns the new value. A negative delta decrements the counter.
+//
+// A missing or expired field is created holding delta, applying the cache's default
+// TTL unless overridden by options. An existing field keeps its TTL and the options
+// are ignored. The stored value must be a decimal int64 representation; anything else
+// returns ErrNotAnInteger. The counter is left unchanged when the result would leave
+// the int64 range.
+//
+// This method uses a Lua script around Redis's HINCRBY so the increment and the
+// expiry of a newly created field happen atomically.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - key: The key of the counter to increment
+//   - delta: The signed value to add to the counter
+//   - opts: Optional expiration applied only when the counter is created (e.g., custom TTL)
+//
+// Returns:
+//   - int64: The new counter value
+//   - error: nil on success, ErrNotAnInteger if the stored value is not an int64
+//     decimal, ErrCounterOverflow if the result would leave the int64 range,
+//     otherwise an error describing the failure
+//
+// Example:
+//
+//	// Count page views; the first call creates the counter with 1
+//	n, err := redisCache.Increment(ctx, "views:home", 1)
+func (r *RedisCache) Increment(ctx context.Context, key string, delta int64, opts ...Option) (int64, error) {
+	options := new(options)
+	if r.ttl > 0 {
+		options.validUntil = time.Now().Add(r.ttl)
+	}
+	options.apply(opts...)
+
+	var ttlMillis int64
+	if !options.validUntil.IsZero() {
+		ttlMillis = options.validUntil.UnixMilli()
+	}
+
+	result, err := r.client.Eval(ctx, incrementScript, []string{r.key}, key, delta, ttlMillis).Result()
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "not an integer"):
+			return 0, ErrNotAnInteger
+		case strings.Contains(err.Error(), "overflow"):
+			return 0, ErrCounterOverflow
+		default:
+			return 0, fmt.Errorf("failed to increment counter: %w", err)
+		}
+	}
+
+	value, _ := result.(string)
+
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse counter value: %w", err)
+	}
+
+	return n, nil
 }
 
 // Set stores the value for the given key in the Redis cache, overwriting any existing value.

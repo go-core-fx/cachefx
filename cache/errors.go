@@ -33,5 +33,30 @@ var (
 	//	}
 	ErrKeyExists = errors.New("key already exists")
 
+	// ErrNotAnInteger indicates a stored value that cannot be used as a counter.
+	//
+	// This error is returned by Increment when the value already stored under the
+	// key is not the decimal representation of an int64 (e.g. "abc", "007", "+7"),
+	// which happens when Set overwrote a counter with arbitrary bytes.
+	//
+	// Example:
+	//	_, err := cache.Increment(ctx, "counter", 1)
+	//	if errors.Is(err, cache.ErrNotAnInteger) {
+	//	    // Stored value is not a counter; overwrite or delete the key
+	//	}
+	ErrNotAnInteger = errors.New("value is not an integer")
+
+	// ErrCounterOverflow indicates an increment that exceeds the int64 range.
+	//
+	// This error is returned by Increment when adding delta to the stored value
+	// would overflow or underflow int64. The counter is left unchanged.
+	//
+	// Example:
+	//	_, err := cache.Increment(ctx, "counter", 1)
+	//	if errors.Is(err, cache.ErrCounterOverflow) {
+	//	    // Counter is at math.MaxInt64
+	//	}
+	ErrCounterOverflow = errors.New("counter overflow")
+
 	ErrFailedToCreateZeroValue = errors.New("failed to create zero item")
 )

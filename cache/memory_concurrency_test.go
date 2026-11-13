@@ -32,10 +32,7 @@ func TestMemoryCache_ConcurrentReads(t *testing.T) {
 
 	// Launch multiple concurrent reads
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			retrieved, getErr := cache.Get(ctx, key)
 			if getErr != nil {
 				t.Errorf("Get failed: %v", getErr)
@@ -45,7 +42,7 @@ func TestMemoryCache_ConcurrentReads(t *testing.T) {
 			if string(retrieved) != value {
 				t.Errorf("Expected %s, got %s", value, retrieved)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -114,10 +111,7 @@ func TestMemoryCache_ConcurrentReadWrite(t *testing.T) {
 
 	// Launch concurrent readers
 	for range numReaders {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for range numOperations / numReaders {
 				key := "shared-key"
 				_, err := c.Get(ctx, key)
@@ -127,15 +121,12 @@ func TestMemoryCache_ConcurrentReadWrite(t *testing.T) {
 					readCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	// Launch concurrent writers
 	for range numWriters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for j := range numOperations / numWriters {
 				key := "shared-key"
 				value := "value-" + strconv.Itoa(j)
@@ -147,7 +138,7 @@ func TestMemoryCache_ConcurrentReadWrite(t *testing.T) {
 					writeCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -222,10 +213,7 @@ func TestMemoryCache_ConcurrentSetOrFail(t *testing.T) {
 	var existsCount atomic.Int32
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for range attemptsPerGoroutine {
 				err := c.SetOrFail(ctx, key, []byte(value))
 				switch {
@@ -237,7 +225,7 @@ func TestMemoryCache_ConcurrentSetOrFail(t *testing.T) {
 					t.Errorf("SetOrFail failed: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -339,15 +327,12 @@ func TestMemoryCache_ConcurrentCleanup(t *testing.T) {
 
 	// Launch concurrent cleanup operations
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			err := c.Cleanup(ctx)
 			if err != nil {
 				t.Errorf("Cleanup failed: %v", err)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
