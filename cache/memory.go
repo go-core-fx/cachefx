@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"math"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -279,6 +281,60 @@ func (m *MemoryCache) GetAndDelete(ctx context.Context, key string) ([]byte, err
 	return m.Get(ctx, key, AndDelete())
 }
 
+// Increment atomically adds delta to the integer counter stored under the given key
+// and returns the new value. A negative delta decrements the counter.
+//
+// A missing or expired key is created holding delta, applying the cache's default TTL
+// unless overridden by options. An existing key keeps its value's TTL and the options
+// are ignored. The stored value must be the decimal representation of an int64
+// (strconv.FormatInt); anything else returns ErrNotAnInteger. The counter is left
+// unchanged when the result would leave the int64 range.
+//
+// The operation is performed atomically with a write lock, so concurrent Increment
+// calls never lose updates.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts (currently unused but kept for interface compatibility)
+//   - key: The key of the counter to increment
+//   - delta: The signed value to add to the counter
+//   - opts: Optional expiration applied only when the counter is created (e.g., custom TTL)
+//
+// Returns:
+//   - int64: The new counter value
+//   - error: nil on success, ErrNotAnInteger if the stored value is not an int64
+//     decimal, ErrCounterOverflow if the result would leave the int64 range,
+//     otherwise an error
+//
+// Example:
+//
+//	// Count page views; the first call creates the counter with 1
+//	n, err := cache.Increment(ctx, "views:home", 1)
+func (m *MemoryCache) Increment(_ context.Context, key string, delta int64, opts ...Option) (int64, error) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	item, ok := m.items[key]
+	if !ok || item.isExpired(time.Now()) {
+		m.items[key] = m.newItem([]byte(strconv.FormatInt(delta, 10)), opts...)
+
+		return delta, nil
+	}
+
+	cur, err := strconv.ParseInt(string(item.value), 10, 64)
+	if err != nil || strconv.FormatInt(cur, 10) != string(item.value) {
+		return 0, ErrNotAnInteger
+	}
+
+	next, ok := addInt64(cur, delta)
+	if !ok {
+		return 0, ErrCounterOverflow
+	}
+
+	item.value = []byte(strconv.FormatInt(next, 10))
+
+	return next, nil
+}
+
 // Set stores the value for the given key in the memory cache, overwriting any existing value.
 //
 // The value will be stored with the default TTL configured for the cache,
@@ -427,6 +483,16 @@ func (m *MemoryCache) getValue(key string, getter func() (*memoryItem, bool)) ([
 	}
 
 	return item.value, nil
+}
+
+// addInt64 adds a and b, reporting false when the result would overflow or
+// underflow the int64 range.
+func addInt64(a, b int64) (int64, bool) {
+	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
+		return 0, false
+	}
+
+	return a + b, true
 }
 
 // cleanup removes all expired items from the memory cache and executes the provided callback.
